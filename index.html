@@ -111,9 +111,37 @@
       text-align: center;
       color: var(--accent);
       font-size: 0.75rem;
-      margin-bottom: 2.5rem;
+      margin-bottom: 2rem;
       opacity: 0.9;
       font-style: italic;
+    }
+
+    .mode-title {
+      text-align: center;
+      color: var(--primary);
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 1.5rem;
+      letter-spacing: 2px;
+      margin-bottom: 1.5rem;
+    }
+
+    .toggle-mode {
+      text-align: center;
+      margin-top: 1.5rem;
+      color: var(--light);
+      font-size: 0.85rem;
+    }
+
+    .toggle-link {
+      color: var(--accent);
+      cursor: pointer;
+      text-decoration: underline;
+      font-weight: 700;
+      transition: color 0.3s ease;
+    }
+
+    .toggle-link:hover {
+      color: var(--primary);
     }
 
     .input-group {
@@ -428,12 +456,25 @@
       bottom: 0;
       left: 0;
       right: 0;
-      background: rgba(26, 26, 46, 0.9);
-      padding: 0.8rem 1rem;
+      background: rgba(15, 15, 30, 0.95);
+      padding: 0.6rem 1rem;
+      color: var(--light);
+      font-size: 0.7rem;
+      border-top: 2px solid var(--primary);
+      text-align: left;
+    }
+
+    .photo-info .author-label {
+      color: var(--dark);
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      opacity: 0.7;
+    }
+
+    .photo-info .author-name {
       color: var(--accent);
-      font-size: 0.8rem;
       font-weight: 700;
-      border-top: 2px solid var(--dark);
     }
 
     .empty-state {
@@ -586,12 +627,16 @@
           localStorage.setItem('user_surname', surname);
           return { success: true };
         } else if (data.msg && data.msg.includes('rate limit')) {
-          return { success: false, error: 'Previše pokušaja. Sačekaj 1 minut i pokušaj ponovo.' };
+          return { success: false, error: 'Previše pokušaja registracije. Sačekaj 1 minut i pokušaj ponovo.' };
+        } else if (data.msg && data.msg.includes('already registered')) {
+          return { success: false, error: 'Ovaj email je već registrovan. Probaj da se prijaviš.' };
+        } else if (data.msg && data.msg.includes('User already registered')) {
+          return { success: false, error: 'Ovaj email je već registrovan. Probaj da se prijaviš.' };
         } else {
-          return { success: false, error: data.msg || 'Greška pri registraciji' };
+          return { success: false, error: data.msg || 'Greška pri registraciji. Probaj ponovo.' };
         }
       } catch (error) {
-        return { success: false, error: 'Problem sa mrežom. Pokušaj ponovo.' };
+        return { success: false, error: 'Problem sa mrežom. Proveri internet i pokušaj ponovo.' };
       }
     }
 
@@ -777,58 +822,88 @@
 
     // Render functions
     function renderLogin() {
-      document.getElementById('app').innerHTML = `
-        <div class="login-screen">
-          <div class="container">
-            <div class="login-box">
-              <h1 class="logo">PKG 23</h1>
-              <div class="author">autor: mirkovic</div>
-              <form id="login-form">
-                <div class="input-row">
-                  <div class="input-group">
-                    <input type="text" id="name" class="input" placeholder="Ime" required>
-                  </div>
-                  <div class="input-group">
-                    <input type="text" id="surname" class="input" placeholder="Prezime" required>
-                  </div>
-                </div>
-                <div class="input-group">
-                  <input type="email" id="email" class="input" placeholder="Email adresa" required>
-                </div>
-                <div class="input-group">
-                  <input type="password" id="password" class="input" placeholder="Lozinka (min 6 karaktera)" required minlength="6">
-                </div>
-                <button type="submit" class="btn">UĐI</button>
-              </form>
-              <div id="error-message"></div>
+      let isRegisterMode = false;
+
+      function updateForm() {
+        const formHtml = isRegisterMode ? `
+          <form id="auth-form">
+            <div class="input-row">
+              <div class="input-group">
+                <input type="text" id="name" class="input" placeholder="Ime" required>
+              </div>
+              <div class="input-group">
+                <input type="text" id="surname" class="input" placeholder="Prezime" required>
+              </div>
+            </div>
+            <div class="input-group">
+              <input type="email" id="email" class="input" placeholder="Email adresa" required>
+            </div>
+            <div class="input-group">
+              <input type="password" id="password" class="input" placeholder="Lozinka (min 6 karaktera)" required minlength="6">
+            </div>
+            <button type="submit" class="btn">REGISTRUJ SE</button>
+          </form>
+          <div class="toggle-mode">
+            Već imaš nalog? <span class="toggle-link" onclick="toggleMode()">PRIJAVI SE</span>
+          </div>
+        ` : `
+          <form id="auth-form">
+            <div class="input-group">
+              <input type="email" id="email" class="input" placeholder="Email adresa" required>
+            </div>
+            <div class="input-group">
+              <input type="password" id="password" class="input" placeholder="Lozinka" required>
+            </div>
+            <button type="submit" class="btn">PRIJAVI SE</button>
+          </form>
+          <div class="toggle-mode">
+            Nemaš nalog? <span class="toggle-link" onclick="toggleMode()">REGISTRUJ SE</span>
+          </div>
+        `;
+
+        document.getElementById('app').innerHTML = `
+          <div class="login-screen">
+            <div class="container">
+              <div class="login-box">
+                <h1 class="logo">PKG 23</h1>
+                <div class="author">autor: mirkovic</div>
+                <div class="mode-title">${isRegisterMode ? 'REGISTRACIJA' : 'PRIJAVA'}</div>
+                ${formHtml}
+                <div id="error-message"></div>
+              </div>
             </div>
           </div>
-        </div>
-      `;
+        `;
 
-      document.getElementById('login-form').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const name = document.getElementById('name').value;
-        const surname = document.getElementById('surname').value;
-        const email = document.getElementById('email').value;
-        const password = document.getElementById('password').value;
-        const errorDiv = document.getElementById('error-message');
+        window.toggleMode = () => {
+          isRegisterMode = !isRegisterMode;
+          updateForm();
+        };
 
-        // Prvo pokušaj login
-        let result = await signIn(email, password);
-        
-        if (!result.success) {
-          // Ako login ne uspe, kreiraj novi nalog
-          result = await signUp(email, password, name, surname);
+        document.getElementById('auth-form').addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const email = document.getElementById('email').value;
+          const password = document.getElementById('password').value;
+          const errorDiv = document.getElementById('error-message');
+
+          let result;
+          if (isRegisterMode) {
+            const name = document.getElementById('name').value;
+            const surname = document.getElementById('surname').value;
+            result = await signUp(email, password, name, surname);
+          } else {
+            result = await signIn(email, password);
+          }
+
           if (result.success) {
             await loadAndRenderApp();
           } else {
             errorDiv.innerHTML = `<div class="error">${result.error}</div>`;
           }
-        } else {
-          await loadAndRenderApp();
-        }
-      });
+        });
+      }
+
+      updateForm();
     }
 
     async function loadAndRenderApp() {
@@ -861,7 +936,10 @@
         <div class="photo-card">
           <img src="${SUPABASE_URL}/storage/v1/object/public/photos/${photo.storage_path}" alt="Photo ${index + 1}" loading="lazy">
           <div class="photo-number">#${index + 1}</div>
-          <div class="photo-info">${photo.user_name || ''} ${photo.user_surname || ''}</div>
+          <div class="photo-info">
+            <span class="author-label">autor: </span>
+            <span class="author-name">${photo.user_name || ''} ${photo.user_surname || ''}</span>
+          </div>
         </div>
       `).join('') : `
         <div class="empty-state">
