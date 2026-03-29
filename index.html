@@ -107,21 +107,12 @@
       text-shadow: 0 0 40px rgba(255, 107, 53, 0.5);
     }
 
-    .tagline {
-      text-align: center;
-      color: var(--accent);
-      font-size: 0.85rem;
-      text-transform: uppercase;
-      letter-spacing: 3px;
-      margin-bottom: 0.5rem;
-    }
-
     .author {
       text-align: center;
-      color: var(--dark);
+      color: var(--accent);
       font-size: 0.75rem;
-      margin-bottom: 2rem;
-      opacity: 0.7;
+      margin-bottom: 2.5rem;
+      opacity: 0.9;
       font-style: italic;
     }
 
@@ -490,9 +481,10 @@
       border-top: 1px solid var(--dark);
       padding: 0.8rem;
       text-align: center;
-      font-size: 0.7rem;
-      color: var(--dark);
+      font-size: 0.75rem;
+      color: var(--accent);
       z-index: 100;
+      opacity: 0.9;
     }
 
     @media (max-width: 768px) {
@@ -560,68 +552,81 @@
 
     // Auth API calls - direktna registracija bez email verifikacije
     async function signUp(email, password, name, surname) {
-      const response = await fetch(`${SUPABASE_URL}/auth/v1/signup`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': SUPABASE_ANON_KEY
-        },
-        body: JSON.stringify({ 
-          email, 
-          password,
-          options: {
-            data: {
-              name: name,
-              surname: surname
+      try {
+        const response = await fetch(`${SUPABASE_URL}/auth/v1/signup`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': SUPABASE_ANON_KEY
+          },
+          body: JSON.stringify({ 
+            email, 
+            password,
+            options: {
+              data: {
+                name: name,
+                surname: surname
+              },
+              email_confirm: false
             }
-          }
-        })
-      });
+          })
+        });
 
-      const data = await response.json();
-      
-      if (data.access_token) {
-        // Direktan login bez verifikacije
-        accessToken = data.access_token;
-        currentUser = data.user;
-        userName = name;
-        userSurname = surname;
-        localStorage.setItem('supabase_access_token', accessToken);
-        localStorage.setItem('supabase_user', JSON.stringify(currentUser));
-        localStorage.setItem('user_name', name);
-        localStorage.setItem('user_surname', surname);
-        return { success: true };
-      } else {
-        return { success: false, error: data.msg || 'Greška pri registraciji' };
+        const data = await response.json();
+        
+        if (data.access_token) {
+          // Direktan login bez verifikacije
+          accessToken = data.access_token;
+          currentUser = data.user;
+          userName = name;
+          userSurname = surname;
+          localStorage.setItem('supabase_access_token', accessToken);
+          localStorage.setItem('supabase_user', JSON.stringify(currentUser));
+          localStorage.setItem('user_name', name);
+          localStorage.setItem('user_surname', surname);
+          return { success: true };
+        } else if (data.msg && data.msg.includes('rate limit')) {
+          return { success: false, error: 'Previše pokušaja. Sačekaj 1 minut i pokušaj ponovo.' };
+        } else {
+          return { success: false, error: data.msg || 'Greška pri registraciji' };
+        }
+      } catch (error) {
+        return { success: false, error: 'Problem sa mrežom. Pokušaj ponovo.' };
       }
     }
 
     async function signIn(email, password) {
-      const response = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': SUPABASE_ANON_KEY
-        },
-        body: JSON.stringify({ email, password })
-      });
+      try {
+        const response = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': SUPABASE_ANON_KEY
+          },
+          body: JSON.stringify({ email, password })
+        });
 
-      const data = await response.json();
-      if (data.access_token) {
-        accessToken = data.access_token;
-        currentUser = data.user;
-        
-        // Učitaj ime i prezime iz user metadata
-        userName = data.user.user_metadata?.name || '';
-        userSurname = data.user.user_metadata?.surname || '';
-        
-        localStorage.setItem('supabase_access_token', accessToken);
-        localStorage.setItem('supabase_user', JSON.stringify(currentUser));
-        localStorage.setItem('user_name', userName);
-        localStorage.setItem('user_surname', userSurname);
-        return { success: true };
-      } else {
-        return { success: false, error: data.msg || 'Greška pri prijavljivanju' };
+        const data = await response.json();
+        if (data.access_token) {
+          accessToken = data.access_token;
+          currentUser = data.user;
+          
+          // Učitaj ime i prezime iz user metadata
+          userName = data.user.user_metadata?.name || '';
+          userSurname = data.user.user_metadata?.surname || '';
+          
+          localStorage.setItem('supabase_access_token', accessToken);
+          localStorage.setItem('supabase_user', JSON.stringify(currentUser));
+          localStorage.setItem('user_name', userName);
+          localStorage.setItem('user_surname', userSurname);
+          return { success: true };
+        } else if (data.msg && data.msg.includes('rate limit')) {
+          return { success: false, error: 'Previše pokušaja. Sačekaj 1 minut.' };
+        } else {
+          return { success: false, error: data.msg || 'Pogrešan email ili lozinka' };
+        }
+      } catch (error) {
+        return { success: false, error: 'Problem sa mrežom. Pokušaj ponovo.' };
       }
     }
 
@@ -758,10 +763,14 @@
           document.getElementById('camera-section').innerHTML = '<div class="loading">ČUVAM...</div>';
           await uploadPhoto(blob);
           stopCamera();
+          
+          // Wait a bit before refreshing to ensure database is updated
+          await new Promise(resolve => setTimeout(resolve, 500));
           await loadAndRenderApp();
         } catch (error) {
           alert('Greška: ' + error.message);
-          renderApp();
+          const photos = await getPhotos();
+          renderApp(photos);
         }
       }, 'image/jpeg', 0.9);
     }
@@ -773,7 +782,6 @@
           <div class="container">
             <div class="login-box">
               <h1 class="logo">PKG 23</h1>
-              <div class="tagline">samo poslednjih 23</div>
               <div class="author">autor: mirkovic</div>
               <form id="login-form">
                 <div class="input-row">
@@ -901,13 +909,17 @@
     // Initialize
     checkSession();
 
-    // Auto-refresh photos every 10 seconds
+    // Auto-refresh photos every 15 seconds (was 10)
     setInterval(async () => {
       if (currentUser && !stream) {
-        const photos = await getPhotos();
-        renderApp(photos);
+        try {
+          const photos = await getPhotos();
+          renderApp(photos);
+        } catch (error) {
+          console.error('Auto-refresh error:', error);
+        }
       }
-    }, 10000);
+    }, 15000);
   </script>
 </body>
 </html>
