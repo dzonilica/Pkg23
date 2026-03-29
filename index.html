@@ -111,7 +111,16 @@
       font-size: 0.85rem;
       text-transform: uppercase;
       letter-spacing: 3px;
-      margin-bottom: 2.5rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .author {
+      text-align: center;
+      color: var(--dark);
+      font-size: 0.75rem;
+      margin-bottom: 2rem;
+      opacity: 0.7;
+      font-style: italic;
     }
 
     .input-group {
@@ -621,7 +630,6 @@
         stream = await navigator.mediaDevices.getUserMedia({ 
           video: { facingMode: 'user', width: 1280, height: 720 } 
         });
-        document.getElementById('video-preview').srcObject = stream;
         renderApp();
       } catch (error) {
         alert('Nije moguće pristupiti kameri: ' + error.message);
@@ -664,8 +672,9 @@
         <div class="login-screen">
           <div class="container">
             <div class="login-box">
-              <h1 class="logo">PKG23</h1>
+              <h1 class="logo">PKG 23</h1>
               <div class="tagline">samo poslednjih 23</div>
+              <div class="author">autor: mirkovic</div>
               <form id="login-form">
                 <div class="input-group">
                   <input type="email" id="email" class="input" placeholder="Email adresa" required>
@@ -744,7 +753,7 @@
       document.getElementById('app').innerHTML = `
         <div class="container">
           <header class="header">
-            <h1 class="logo">PKG23</h1>
+            <h1 class="logo">PKG 23</h1>
             <div class="user-info">
               <span class="user-email">${currentUser.email}</span>
               <button class="btn-logout" onclick="signOut()">IZAĐI</button>
