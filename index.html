@@ -567,123 +567,190 @@
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRqaHJ4cmh1Y3dmeWduanZrcXlsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQzOTAzMTYsImV4cCI6MjA4OTk2NjMxNn0.APKFBCb4PfuPoiD4c4p5AdUWe6aXpZZ3eFvifPuzvpw';
 
     let currentUser = null;
-    let accessToken = null;
+    let sessionToken = null;
     let stream = null;
     let facingMode = 'user'; // 'user' = prednja, 'environment' = zadnja
-    let userName = '';
-    let userSurname = '';
 
-    // Check for existing session
-    function checkSession() {
-      const token = localStorage.getItem('supabase_access_token');
-      const user = localStorage.getItem('supabase_user');
-      const name = localStorage.getItem('user_name');
-      const surname = localStorage.getItem('user_surname');
-      
-      if (token && user) {
-        accessToken = token;
-        currentUser = JSON.parse(user);
-        userName = name || '';
-        userSurname = surname || '';
-        loadAndRenderApp();
-      } else {
-        renderLogin();
-      }
+    // Simple password hashing using crypto API
+    async function hashPassword(password) {
+      const encoder = new TextEncoder();
+      const data = encoder.encode(password);
+      const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
     }
 
-    // Auth API calls - direktna registracija bez email verifikacije
+    // Generate random session token
+    function generateToken() {
+      return Array.from(crypto.getRandomValues(new Uint8Array(32)))
+        .map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    // Check for existing session
+    async function checkSession() {
+      const token = localStorage.getItem('session_token');
+      
+      if (token) {
+        // Verify session token
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/sessions?token=eq.${token}&select=*,users(*)`, {
+          headers: {
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+          }
+        });
+
+        const sessions = await response.json();
+        
+        if (sessions && sessions.length > 0) {
+          const session = sessions[0];
+          const expiresAt = new Date(session.expires_at);
+          
+          if (expiresAt > new Date()) {
+            // Valid session
+            sessionToken = token;
+            currentUser = session.users;
+            await loadAndRenderApp();
+            return;
+          }
+        }
+        
+        // Invalid or expired session
+        localStorage.removeItem('session_token');
+      }
+      
+      renderLogin();
+    }
+
+    // Custom Auth - Registration
     async function signUp(email, password, name, surname) {
       try {
-        const response = await fetch(`${SUPABASE_URL}/auth/v1/signup`, {
+        const passwordHash = await hashPassword(password);
+        
+        // Check if user already exists
+        const checkResponse = await fetch(`${SUPABASE_URL}/rest/v1/users?email=eq.${encodeURIComponent(email)}`, {
+          headers: {
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+          }
+        });
+
+        const existing = await checkResponse.json();
+        if (existing && existing.length > 0) {
+          return { success: false, error: 'Ovaj email je već registrovan. Probaj da se prijaviš.' };
+        }
+
+        // Create new user
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/users`, {
           method: 'POST',
           headers: {
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
             'Content-Type': 'application/json',
-            'apikey': SUPABASE_ANON_KEY
+            'Prefer': 'return=representation'
           },
-          body: JSON.stringify({ 
-            email, 
-            password,
-            options: {
-              data: {
-                name: name,
-                surname: surname
-              },
-              email_confirm: false
-            }
+          body: JSON.stringify({
+            email,
+            password_hash: passwordHash,
+            name,
+            surname
           })
         });
 
         const data = await response.json();
         
-        if (data.access_token) {
-          // Direktan login bez verifikacije
-          accessToken = data.access_token;
-          currentUser = data.user;
-          userName = name;
-          userSurname = surname;
-          localStorage.setItem('supabase_access_token', accessToken);
-          localStorage.setItem('supabase_user', JSON.stringify(currentUser));
-          localStorage.setItem('user_name', name);
-          localStorage.setItem('user_surname', surname);
+        if (data && data.length > 0) {
+          const user = data[0];
+          
+          // Create session
+          const token = generateToken();
+          const expiresAt = new Date();
+          expiresAt.setDate(expiresAt.getDate() + 30); // 30 days
+
+          await fetch(`${SUPABASE_URL}/rest/v1/sessions`, {
+            method: 'POST',
+            headers: {
+              'apikey': SUPABASE_ANON_KEY,
+              'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              user_id: user.id,
+              token,
+              expires_at: expiresAt.toISOString()
+            })
+          });
+
+          // Save session
+          sessionToken = token;
+          currentUser = user;
+          localStorage.setItem('session_token', token);
+          
           return { success: true };
-        } else if (data.msg && data.msg.includes('rate limit')) {
-          return { success: false, error: 'Previše pokušaja registracije. Sačekaj 1 minut i pokušaj ponovo.' };
-        } else if (data.msg && data.msg.includes('already registered')) {
-          return { success: false, error: 'Ovaj email je već registrovan. Probaj da se prijaviš.' };
-        } else if (data.msg && data.msg.includes('User already registered')) {
-          return { success: false, error: 'Ovaj email je već registrovan. Probaj da se prijaviš.' };
-        } else {
-          return { success: false, error: data.msg || 'Greška pri registraciji. Probaj ponovo.' };
         }
+        
+        return { success: false, error: 'Greška pri registraciji. Pokušaj ponovo.' };
       } catch (error) {
+        console.error('Signup error:', error);
         return { success: false, error: 'Problem sa mrežom. Proveri internet i pokušaj ponovo.' };
       }
     }
 
+    // Custom Auth - Login
     async function signIn(email, password) {
       try {
-        const response = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
-          method: 'POST',
+        const passwordHash = await hashPassword(password);
+        
+        // Find user
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/users?email=eq.${encodeURIComponent(email)}&password_hash=eq.${passwordHash}`, {
           headers: {
-            'Content-Type': 'application/json',
-            'apikey': SUPABASE_ANON_KEY
-          },
-          body: JSON.stringify({ email, password })
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+          }
         });
 
-        const data = await response.json();
-        if (data.access_token) {
-          accessToken = data.access_token;
-          currentUser = data.user;
+        const users = await response.json();
+        
+        if (users && users.length > 0) {
+          const user = users[0];
           
-          // Učitaj ime i prezime iz user metadata
-          userName = data.user.user_metadata?.name || '';
-          userSurname = data.user.user_metadata?.surname || '';
+          // Create session
+          const token = generateToken();
+          const expiresAt = new Date();
+          expiresAt.setDate(expiresAt.getDate() + 30); // 30 days
+
+          await fetch(`${SUPABASE_URL}/rest/v1/sessions`, {
+            method: 'POST',
+            headers: {
+              'apikey': SUPABASE_ANON_KEY,
+              'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              user_id: user.id,
+              token,
+              expires_at: expiresAt.toISOString()
+            })
+          });
+
+          // Save session
+          sessionToken = token;
+          currentUser = user;
+          localStorage.setItem('session_token', token);
           
-          localStorage.setItem('supabase_access_token', accessToken);
-          localStorage.setItem('supabase_user', JSON.stringify(currentUser));
-          localStorage.setItem('user_name', userName);
-          localStorage.setItem('user_surname', userSurname);
           return { success: true };
-        } else if (data.msg && data.msg.includes('rate limit')) {
-          return { success: false, error: 'Previše pokušaja. Sačekaj 1 minut.' };
-        } else {
-          return { success: false, error: data.msg || 'Pogrešan email ili lozinka' };
         }
+        
+        return { success: false, error: 'Pogrešan email ili lozinka' };
       } catch (error) {
+        console.error('Login error:', error);
         return { success: false, error: 'Problem sa mrežom. Pokušaj ponovo.' };
       }
     }
 
     function signOut() {
-      localStorage.removeItem('supabase_access_token');
-      localStorage.removeItem('supabase_user');
-      localStorage.removeItem('user_name');
-      localStorage.removeItem('user_surname');
+      localStorage.removeItem('session_token');
       currentUser = null;
-      accessToken = null;
-      userName = '';
-      userSurname = '';
+      sessionToken = null;
       if (stream) {
         stream.getTracks().forEach(track => track.stop());
         stream = null;
@@ -696,7 +763,7 @@
       const response = await fetch(`${SUPABASE_URL}/rest/v1/photos?select=*&order=created_at.desc&limit=23`, {
         headers: {
           'apikey': SUPABASE_ANON_KEY,
-          'Authorization': `Bearer ${accessToken}`
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
         }
       });
       return await response.json();
@@ -710,7 +777,7 @@
         method: 'POST',
         headers: {
           'apikey': SUPABASE_ANON_KEY,
-          'Authorization': `Bearer ${accessToken}`,
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
           'Content-Type': 'image/jpeg'
         },
         body: blob
@@ -725,15 +792,15 @@
         method: 'POST',
         headers: {
           'apikey': SUPABASE_ANON_KEY,
-          'Authorization': `Bearer ${accessToken}`,
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
           'Content-Type': 'application/json',
           'Prefer': 'return=minimal'
         },
         body: JSON.stringify({
           user_id: currentUser.id,
           storage_path: fileName,
-          user_name: userName,
-          user_surname: userSurname
+          user_name: currentUser.name,
+          user_surname: currentUser.surname
         })
       });
 
@@ -751,7 +818,7 @@
           method: 'DELETE',
           headers: {
             'apikey': SUPABASE_ANON_KEY,
-            'Authorization': `Bearer ${accessToken}`
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
           }
         });
 
@@ -760,7 +827,7 @@
           method: 'DELETE',
           headers: {
             'apikey': SUPABASE_ANON_KEY,
-            'Authorization': `Bearer ${accessToken}`
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
           }
         });
       }
@@ -953,7 +1020,7 @@
           <header class="header">
             <h1 class="logo">PKG 23</h1>
             <div class="user-info">
-              <span class="user-email">${userName} ${userSurname}</span>
+              <span class="user-email">${currentUser.name} ${currentUser.surname}</span>
               <button class="btn-logout" onclick="signOut()">IZAĐI</button>
             </div>
           </header>
