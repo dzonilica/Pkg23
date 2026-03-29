@@ -310,6 +310,7 @@
       display: block;
       margin: 0 auto 1.5rem;
       border: 3px solid var(--primary);
+      transform: scaleX(-1);
     }
 
     .camera-controls {
@@ -868,7 +869,14 @@
       
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
+      
+      // Mirror the image back to normal (since video is mirrored with CSS)
+      context.translate(canvas.width, 0);
+      context.scale(-1, 1);
       context.drawImage(video, 0, 0);
+      
+      // Reset transform for future draws
+      context.setTransform(1, 0, 0, 1, 0, 0);
       
       canvas.toBlob(async (blob) => {
         try {
